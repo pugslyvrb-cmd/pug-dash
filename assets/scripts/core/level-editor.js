@@ -257,7 +257,8 @@ class LevelEditor {
             this._clearEditorSelection();
             return;
         }
-        if (key === ' ' || key === 'space') {
+        // P starts a playtest so Space remains available as the pan modifier.
+        if (key === 'p') {
             event.preventDefault?.();
             if (!this._editorPlaytestActive) this._startEditorPlaytest();
             return;
