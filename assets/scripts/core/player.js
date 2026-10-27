@@ -3139,7 +3139,8 @@ if (this.p.isFlying || this.p.isUfo) {
     const lastSurfaceY = previousWorldX === undefined
       ? surfaceY
       : (gameObj.getSlopeSurfaceY(previousWorldX) ?? surfaceY);
-    if (this._slopeBackWallHit(gameObj, pieceWidth, playersY, surfaceY)) {
+    // Ship mode uses the slope surface as a rideable surface; don't treat its back edge as an instant-death wall.
+    if (!this.p.isFlying && this._slopeBackWallHit(gameObj, pieceWidth, playersY, surfaceY)) {
       return { landed: false, died: true, immediate: true, reason: 'slope-backwall' };
     }
     const capLand = this._slopeFlatCapLand(
