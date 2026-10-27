@@ -86,7 +86,7 @@ class LevelEditor {
     const allObj = window.allobjects();
     this._totalIds = Object.keys(allObj).length;
     this._editorPage = 0;
-    this._maxPerPage = 12;
+    this._maxPerPage = screenWidth < 1100 ? 8 : (screenWidth < 1450 ? 10 : 12);
     this._isSwipeEnabled = false;
     this._lastSwipeGridX;
     this._lastSwipeGridY;
@@ -106,6 +106,8 @@ class LevelEditor {
     this._editorPlaytestSavedView = null;
     this._editorPlaytestPauseView = null;
     this._editorPlaytestLastTrailPoint = null;
+    this._editorPanActive = false;
+    this._editorSpaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     this.input.on('pointerdown', (pointer) => {
         if (this._editorPlaytestActive && !this._editorPlaytestPaused) return;
         this._clickStartPos.x = pointer.x;
@@ -113,17 +115,45 @@ class LevelEditor {
         this._cameraStartX = this._cameraX;
         this._cameraStartY = this._cameraY;
         this._isDragging = false;
+        // Laptop-friendly canvas navigation: hold Space and drag, or drag with the middle mouse button.
+        if (this._editorSpaceKey?.isDown || pointer.middleButtonDown?.()) {
+            this._editorPanActive = true;
+            this._isDragging = true;
+            this._editorBoxSelectActive = false;
+            return;
+        }
         if (this._editorTab === "edit" && this._isSwipeEnabled) {
             this._startEditorBoxSelect(pointer);
         }
     });
     this.input.on('pointermove', (pointer) => {
         if (this._editorPlaytestActive && !this._editorPlaytestPaused) return;
+        if (this._editorPanActive) {
+            this._cameraX = this._cameraStartX - (pointer.x - this._clickStartPos.x);
+            this._cameraY = this._cameraStartY - (pointer.y - this._clickStartPos.y);
+            this._level.container.x = -this._cameraX;
+            this._level.container.y = -this._cameraY;
+            this._level.additiveContainer.x = -this._cameraX;
+            this._level.additiveContainer.y = -this._cameraY;
+            this._level.topContainer.x = -this._cameraX;
+            this._level.topContainer.y = -this._cameraY;
+            this._bg.tilePositionX = this._cameraX * 0.1;
+            this._bg.tilePositionY = this._bgInitY + this._cameraY * 0.1;
+            return;
+        }
         if (this._editorBoxSelectActive) {
             this._updateEditorBoxSelect(pointer);
         }
     });
     this.input.on('pointerup', (pointer) => {
+        if (this._editorPanActive) {
+            this._editorPanActive = false;
+            this._lastSwipeGridX = -1;
+            this._lastSwipeGridY = -1;
+            this._isDragging = false;
+            this._isDraggingSlider = false;
+            return;
+        }
         if (this._editorPlaytestActive && !this._editorPlaytestPaused) {
             this._lastSwipeGridX = -1;
             this._lastSwipeGridY = -1;
@@ -197,6 +227,61 @@ class LevelEditor {
         moveSelectedObjectsWithKey(amount, 0);
     });
 
+    // Common Geometry Dash-style editor shortcuts. Ignore shortcuts while typing in a field.
+    this.input.keyboard.on('keydown', (event) => {
+        if (!event || this._editorTextInputFocused) return;
+        const key = String(event.key || '').toLowerCase();
+        const command = !!(event.ctrlKey || event.metaKey);
+        if (this._editorPlaytestActive && !this._editorPlaytestPaused) return;
+
+        if (command && key === 'd') {
+            event.preventDefault?.();
+            this._duplicateSelectedObject();
+            return;
+        }
+        if (command && key === 's') {
+            event.preventDefault?.();
+            this._saveEditorLevel();
+            return;
+        }
+        if (key === 'delete' || key === 'backspace') {
+            event.preventDefault?.();
+            this._deleteSelectedObject();
+            return;
+        }
+        if (key === 'escape') {
+            if (this._editorBoxSelectActive) {
+                this._editorBoxSelectActive = false;
+                this._editorBoxSelectGraphics?.clear?.();
+            }
+            this._clearEditorSelection();
+            return;
+        }
+        // P starts a playtest so Space remains available as the pan modifier.
+        if (key === 'p') {
+            event.preventDefault?.();
+            if (!this._editorPlaytestActive) this._startEditorPlaytest();
+            return;
+        }
+        if (key === '+' || key === '=') {
+            event.preventDefault?.();
+            this._adjustZoom(0.1);
+            return;
+        }
+        if (key === '-' || key === '_') {
+            event.preventDefault?.();
+            this._adjustZoom(-0.1);
+            return;
+        }
+        if (key === 'q') {
+            this._rotateObject(-90);
+            return;
+        }
+        if (key === 'e') {
+            this._rotateObject(90);
+        }
+    });
+
     this._createEditorGui();
   }
 
@@ -227,15 +312,16 @@ class LevelEditor {
     const bg = this.add.rectangle(0, screenHeight, screenWidth, 200, 0x000000).setOrigin(0, 1).setAlpha(0.75).setInteractive();
     this._toolbox.add(bg);
 
-    this._leftArrow = this.add.image(screenWidth / 2 - 330, screenHeight - 100, "GJ_GameSheet03", "GJ_arrow_02_001.png")
+    const paletteArrowOffset = Math.min(330, screenWidth * 0.34);
+    this._leftArrow = this.add.image(centerX - paletteArrowOffset, screenHeight - 100, "GJ_GameSheet03", "GJ_arrow_02_001.png")
         .setInteractive().setScale(0.7);
 
-    this._rightArrow = this.add.image(screenWidth / 2 + 330, screenHeight - 100, "GJ_GameSheet03", "GJ_arrow_02_001.png")
+    this._rightArrow = this.add.image(centerX + paletteArrowOffset, screenHeight - 100, "GJ_GameSheet03", "GJ_arrow_02_001.png")
         .setInteractive().setScale(0.7).setFlipX(true);
 
     this._toolbox.add([this._leftArrow, this._rightArrow]);
 
-    const swipeX = centerX + 450;
+    const swipeX = Math.min(centerX + 450, screenWidth - 80);
     const swipeY = screenHeight - 100;
 
     this._swipeContainer = this.add.container(swipeX, swipeY).setDepth(1001);
@@ -256,7 +342,7 @@ class LevelEditor {
         }
     });
 
-    const tabX = (screenWidth / 2) - 475;
+    const tabX = Math.max(120, (screenWidth / 2) - 475);
     const tabYStart = screenHeight - 150;
     const tabSpacing = 55;
 
@@ -2012,11 +2098,12 @@ class LevelEditor {
         ? itemsForGrid
         : itemsForGrid.slice(startIdx, startIdx + this._maxPerPage);
 
-    const paddingX = 90;
-    const paddingY = 80;
-    const cols = 6;
+    // Keep the object palette usable on smaller laptop viewports without clipping its second row.
+    const cols = screenWidth < 1100 ? 4 : (screenWidth < 1450 ? 5 : 6);
+    const paddingX = screenWidth < 1100 ? 72 : (screenWidth < 1450 ? 78 : 90);
+    const paddingY = screenHeight < 760 ? 58 : 80;
     const startX = (screenWidth / 2) - ((cols - 1) * paddingX) / 2;
-    const startY = screenHeight - 140;
+    const startY = screenHeight - (screenHeight < 760 ? 108 : 140);
 
     pageItems.forEach((item, index) => {
         const col = index % cols;
